@@ -16,14 +16,9 @@ openai.api_key = ""
 
 
 import azure.cognitiveservices.speech as speechsdk
-# This example requires environment variables named "SPEECH_KEY" and "SPEECH_REGION"
+
 speech_config = speechsdk.SpeechConfig(subscription=os.environ.get('SPEECH_KEY'), region=os.environ.get('SPEECH_REGION'))
 audio_config = speechsdk.audio.AudioOutputConfig(use_default_speaker=True)
-
-# The language of the voice that speaks.
-speech_config.speech_synthesis_voice_name='zh-CN-YunxiNeural'
-
-speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
 
 def stt():
     speech_config = speechsdk.SpeechConfig(subscription=os.environ.get(
@@ -33,7 +28,7 @@ def stt():
     speech_recognizer = speechsdk.SpeechRecognizer(
         speech_config=speech_config, audio_config=audio_config)
 
-    print("[LISTENING...]")
+    print("[Listening...]")
     auto_detect_source_language_config = \
         speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
             languages=["en-US", "zh-CN"])
@@ -45,10 +40,16 @@ def stt():
     auto_detect_source_language_result = speechsdk.AutoDetectSourceLanguageResult(
         result)
     detected_language = auto_detect_source_language_result.language
-    print(f"[ME-{detected_language}]: {result.text}")
-    return result.text
+    if(len(result.text) > 0):
+        print(f"[ME-({detected_language})]: {result.text}")
+    return detected_language, result.text
 
-def tts(text):
+def tts(lang, text):
+    if(lang == "zh-CN"):
+        speech_config.speech_synthesis_voice_name = 'zh-CN-YunxiNeural'
+    else:
+        speech_config.speech_synthesis_voice_name='en-US-JennyMultilingualNeural'
+    speech_synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
     speech_synthesis_result = speech_synthesizer.speak_text_async(text).get()
 
     if speech_synthesis_result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
@@ -62,21 +63,29 @@ def tts(text):
                 print("Did you set the speech resource key and region values?")
         return False
 
-def chat(context):
+def chat(context, maxContextCount=10):
+    if(len(context) > maxContextCount):
+        context.pop(0)
     res = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=context
     )
-    return res["choices"][0]["message"]["content"]
+    content = res["choices"][0]["message"]["content"]
+    context.append({"role": "assistant", "content": content})
+    return content
 
 
 def startConversation():
     context = []
     while(True):
-        txt = stt()
+        lang, txt = stt()
+        while(len(txt) == 0):
+            lang, txt = stt()
+        if(txt == "I'm out."):
+            break
         context.append({"role": "user", "content": txt})
         res = chat(context)
         print(f"[GPT]: {res}")
-        tts(res)
+        tts(lang, res)
 
 startConversation()
